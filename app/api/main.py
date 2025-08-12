@@ -1,28 +1,29 @@
-from fastapi import FastAPI, BackgroundTasks, Response, Request, Depends, Form, UploadFile, File
-from app.core.config import settings
-from app.core.logging import setup_logging
-from app.services.jobs import JobService
-from app.services.accounts import AccountService
-from app.services.telethon_client import ClientFactory
-from app.services.scraper import Scraper
-from app.services.control import AppControlService
-from app.services.admins import AdminService, verify_password
-from pydantic import BaseModel
-from datetime import timedelta
-from prometheus_client import generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST
-from prometheus_client import Counter
-from fastapi.templating import Jinja2Templates
-from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import StreamingResponse, RedirectResponse
-from fastapi.responses import PlainTextResponse
+import logging
 import os
-from app.api.auth import require_admin, require_api_key
-from app.core.db import async_session
-from app.models.db import AddJob
+from datetime import timedelta
 from typing import Optional
+
+from fastapi import Depends, FastAPI, File, Form, Request, Response, UploadFile
+from fastapi.templating import Jinja2Templates
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import RedirectResponse, StreamingResponse
 from telethon.errors import SessionPasswordNeededError
-from telethon.errors.rpcbaseerrors import ServerError
 from telethon.errors.common import AuthKeyNotFound
+from telethon.errors.rpcbaseerrors import ServerError
+
+from app.api.auth import require_admin, require_api_key
+from app.core.config import settings
+from app.core.db import async_session
+from app.core.logging import setup_logging
+from app.models.db import AddJob
+from app.services.accounts import AccountService
+from app.services.admins import AdminService, verify_password
+from app.services.control import AppControlService
+from app.services.jobs import JobService
+from app.services.scraper import Scraper
+from app.services.telethon_client import ClientFactory
 
 app = FastAPI(title="Telegram Scraper & Adder API")
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates"))
@@ -33,13 +34,16 @@ admin_svc = AdminService()
 
 setup_logging(settings.LOG_LEVEL)
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+
 class EnqueueRequest(BaseModel):
     dest: str
     usernames: list[str]
+
 
 @app.post("/jobs/enqueue")
 async def enqueue(req: EnqueueRequest, _: bool = Depends(require_api_key)):
@@ -47,17 +51,33 @@ async def enqueue(req: EnqueueRequest, _: bool = Depends(require_api_key)):
     count = await svc.enqueue(req.dest, req.usernames)
     return {"enqueued": count}
 
+
 @app.get("/jobs")
 async def jobs(status: str | None = None, _: bool = Depends(require_api_key)):
     svc = JobService()
     items = await svc.list_jobs(status)
-    return [{"id": j.id, "dest": j.dest_group, "username": j.username, "status": j.status, "account_id": j.account_id, "error": j.error} for j in items]
+    return [
+        {
+            "id": j.id,
+            "dest": j.dest_group,
+            "username": j.username,
+            "status": j.status,
+            "account_id": j.account_id,
+            "error": j.error,
+        }
+        for j in items
+    ]
+
 
 @app.get("/accounts")
 async def accounts(_: bool = Depends(require_api_key)):
     svc = AccountService()
     items = await svc.list()
-    return [{"id": a.id, "phone": a.phone, "cooldown_until": a.cooldown_until, "last_error": a.last_error} for a in items]
+    return [
+        {"id": a.id, "phone": a.phone, "cooldown_until": a.cooldown_until, "last_error": a.last_error} for a in items
+    ]
+
+
 class ScrapeQuery(BaseModel):
     source: str
     limit: int = 1000
@@ -65,6 +85,7 @@ class ScrapeQuery(BaseModel):
     min_last_seen_days: int | None = None
     exclude_contains: list[str] = []
     include_full: bool = False
+
 
 @app.post("/scrape")
 async def scrape(q: ScrapeQuery, _: bool = Depends(require_api_key)):
@@ -74,13 +95,16 @@ async def scrape(q: ScrapeQuery, _: bool = Depends(require_api_key)):
     base = os.path.join(settings.SESSIONS_DIR, "default")
     src = base + ".session" if os.path.exists(base + ".session") else (base if os.path.exists(base) else None)
     if src:
-        import tempfile, shutil
+        import shutil
+        import tempfile
+
         fd, tmp = tempfile.mkstemp(prefix="session_export_", suffix=".session")
         try:
             import os as _os
+
             _os.close(fd)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 - broad for cleanup safety
+            logging.getLogger(__name__).debug("tmp fd close failed: %s", e)
         shutil.copyfile(src, tmp)
         tmp_path = tmp
         client = factory.build(tmp_path)
@@ -91,7 +115,9 @@ async def scrape(q: ScrapeQuery, _: bool = Depends(require_api_key)):
         scraper = Scraper(client)
         delta = timedelta(days=q.min_last_seen_days) if q.min_last_seen_days else None
         if q.include_full:
-            usernames = await scraper.scrape_members_detailed(q.source, q.limit, q.query, min_last_seen=delta, include_full=True)
+            usernames = await scraper.scrape_members_detailed(
+                q.source, q.limit, q.query, min_last_seen=delta, include_full=True
+            )
         else:
             usernames = await scraper.scrape_usernames(q.source, q.limit, q.query, min_last_seen=delta)
         if q.exclude_contains:
@@ -105,25 +131,32 @@ async def scrape(q: ScrapeQuery, _: bool = Depends(require_api_key)):
             if tmp_path:
                 try:
                     os.remove(tmp_path)
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001 - best-effort cleanup
+                    logging.getLogger(__name__).debug("tmp session cleanup failed: %s", e)
+
 
 # Prometheus metrics
 requests_total = Counter("app_requests_total", "Total API requests", ["endpoint"])  # minimal sample
+
 
 @app.get("/metrics")
 def metrics():
     data = generate_latest()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/events/jobs")
 async def jobs_events(_: bool = Depends(require_admin)):
     async def event_stream():
         import asyncio
+
         while True:
             # simple heartbeat to trigger client refreshes
-            yield f"data: tick\n\n"
+            yield "data: tick\n\n"
             await asyncio.sleep(5)
+
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
 
 @app.get("/")
 async def admin_page(request: Request, _: bool = Depends(require_admin)):
@@ -131,9 +164,13 @@ async def admin_page(request: Request, _: bool = Depends(require_admin)):
     # ensure CSRF token
     if authed and not request.session.get("csrf"):
         import secrets
+
         request.session["csrf"] = secrets.token_hex(16)
     accounts = await AccountService().list()
-    return templates.TemplateResponse("index.html", {"request": request, "authed": authed, "csrf": request.session.get("csrf"), "accounts": accounts})
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "authed": authed, "csrf": request.session.get("csrf"), "accounts": accounts}
+    )
+
 
 @app.get("/partials/overview")
 async def overview_partial(request: Request, _: bool = Depends(require_admin)):
@@ -145,10 +182,11 @@ async def overview_partial(request: Request, _: bool = Depends(require_admin)):
         hb = await control.get("worker_heartbeat")
         if hb:
             from datetime import datetime, timedelta
+
             ts = datetime.fromisoformat(hb)
             worker_alive = (datetime.utcnow() - ts) < timedelta(seconds=15)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 - heartbeat is best-effort
+        logging.getLogger(__name__).debug("heartbeat read failed: %s", e)
     # accounts count
     accounts = 0
     try:
@@ -157,7 +195,11 @@ async def overview_partial(request: Request, _: bool = Depends(require_admin)):
         accounts = 0
     # job counts
     counts = await JobService().counts_by_status()
-    return templates.TemplateResponse("_overview.html", {"request": request, "paused": paused, "worker_alive": worker_alive, "accounts": accounts, "counts": counts})
+    return templates.TemplateResponse(
+        "_overview.html",
+        {"request": request, "paused": paused, "worker_alive": worker_alive, "accounts": accounts, "counts": counts},
+    )
+
 
 @app.get("/settings")
 async def settings_page(request: Request, _: bool = Depends(require_admin)):
@@ -173,7 +215,10 @@ async def settings_page(request: Request, _: bool = Depends(require_admin)):
         "QUOTA_PER_ACCOUNT_MAX": settings.QUOTA_PER_ACCOUNT_MAX,
         "QUOTA_PER_ACCOUNT_WINDOW": settings.QUOTA_PER_ACCOUNT_WINDOW,
     }
-    return templates.TemplateResponse("settings.html", {"request": request, "cfg": cfg, "csrf": request.session.get("csrf")})
+    return templates.TemplateResponse(
+        "settings.html", {"request": request, "cfg": cfg, "csrf": request.session.get("csrf")}
+    )
+
 
 @app.post("/settings")
 async def settings_save(request: Request, _: bool = Depends(require_admin)):
@@ -196,7 +241,7 @@ async def settings_save(request: Request, _: bool = Depends(require_admin)):
     # read existing
     existing = {}
     try:
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             for line in f:
                 if "=" in line and not line.strip().startswith("#"):
                     k, v = line.rstrip().split("=", 1)
@@ -210,11 +255,15 @@ async def settings_save(request: Request, _: bool = Depends(require_admin)):
     # naive reload note
     return RedirectResponse(url="/settings", status_code=303)
 
+
 @app.get("/admin/accounts")
 async def accounts_page(request: Request, _: bool = Depends(require_admin)):
     svc = AccountService()
     items = await svc.list()
-    return templates.TemplateResponse("accounts.html", {"request": request, "accounts": items, "csrf": request.session.get("csrf")})
+    return templates.TemplateResponse(
+        "accounts.html", {"request": request, "accounts": items, "csrf": request.session.get("csrf")}
+    )
+
 
 @app.post("/admin/accounts/delete")
 async def accounts_delete(request: Request, id: int = Form(...), _: bool = Depends(require_admin)):
@@ -225,14 +274,17 @@ async def accounts_delete(request: Request, id: int = Form(...), _: bool = Depen
     await svc.delete(id)
     return RedirectResponse(url="/admin/accounts", status_code=303)
 
+
 @app.get("/admin/accounts/login")
 async def accounts_login_form(request: Request, _: bool = Depends(require_admin)):
     return templates.TemplateResponse("login_account.html", {"request": request, "csrf": request.session.get("csrf")})
+
 
 @app.post("/admin/accounts/login")
 async def accounts_login(request: Request, phone: str = Form(...), _: bool = Depends(require_admin)):
     # Start login flow: send code via Telethon and store in session temp
     from app.services.telethon_client import ClientFactory, parse_proxy
+
     if request.session.get("csrf") != (await request.form()).get("csrf"):
         return Response(status_code=403)
     # Ensure API credentials are configured to avoid runtime 500s
@@ -259,7 +311,10 @@ async def accounts_login(request: Request, phone: str = Form(...), _: bool = Dep
                 {
                     "request": request,
                     "csrf": request.session.get("csrf"),
-                    "error": f"Telegram servers temporarily unavailable ({str(e)}). Try again in a minute or set an HTTP/SOCKS proxy in Settings, then retry.",
+                    "error": (
+                        f"Telegram servers temporarily unavailable ({str(e)}). "
+                        "Try again in a minute or set an HTTP/SOCKS proxy in Settings, then retry."
+                    ),
                 },
                 status_code=503,
             )
@@ -272,9 +327,11 @@ async def accounts_login(request: Request, phone: str = Form(...), _: bool = Dep
     finally:
         await client.disconnect()
 
+
 @app.post("/admin/accounts/verify")
 async def accounts_verify(request: Request, code: str = Form(...), _: bool = Depends(require_admin)):
     from app.services.telethon_client import ClientFactory, parse_proxy
+
     form = await request.form()
     if request.session.get("csrf") != form.get("csrf"):
         return Response(status_code=403)
@@ -295,7 +352,10 @@ async def accounts_verify(request: Request, code: str = Form(...), _: bool = Dep
                     "request": request,
                     "phone": phone,
                     "csrf": request.session.get("csrf"),
-                    "error": f"Telegram servers temporarily unavailable ({str(e)}). Try again later or configure a proxy in Settings.",
+                    "error": (
+                        f"Telegram servers temporarily unavailable ({str(e)}). "
+                        "Try again later or configure a proxy in Settings."
+                    ),
                 },
                 status_code=503,
             )
@@ -314,9 +374,11 @@ async def accounts_verify(request: Request, code: str = Form(...), _: bool = Dep
     finally:
         await client.disconnect()
 
+
 @app.post("/admin/accounts/password")
 async def accounts_password(request: Request, password: str = Form(...), _: bool = Depends(require_admin)):
     from app.services.telethon_client import ClientFactory, parse_proxy
+
     form = await request.form()
     if request.session.get("csrf") != form.get("csrf"):
         return Response(status_code=403)
@@ -332,7 +394,12 @@ async def accounts_password(request: Request, password: str = Form(...), _: bool
         except ServerError as e:
             return templates.TemplateResponse(
                 "login_account_password.html",
-                {"request": request, "phone": phone, "csrf": request.session.get("csrf"), "error": f"Telegram servers temporarily unavailable ({str(e)}). Try again later or set a proxy."},
+                {
+                    "request": request,
+                    "phone": phone,
+                    "csrf": request.session.get("csrf"),
+                    "error": f"Telegram servers temporarily unavailable ({str(e)}). Try again later or set a proxy.",
+                },
                 status_code=503,
             )
         await AccountService().create(phone=phone, session_path=os.path.join(settings.SESSIONS_DIR, phone))
@@ -342,13 +409,28 @@ async def accounts_password(request: Request, password: str = Form(...), _: bool
     finally:
         await client.disconnect()
 
+
 @app.get("/scrape")
 async def scrape_page(request: Request, _: bool = Depends(require_admin)):
     accounts = await AccountService().list()
-    return templates.TemplateResponse("scrape.html", {"request": request, "csrf": request.session.get("csrf"), "results": None, "accounts": accounts})
+    return templates.TemplateResponse(
+        "scrape.html", {"request": request, "csrf": request.session.get("csrf"), "results": None, "accounts": accounts}
+    )
+
 
 @app.post("/scrape/run")
-async def scrape_run(request: Request, source: str = Form(...), limit: int = Form(500), query: str = Form(""), min_last_seen_days: Optional[int] = Form(None), exclude_contains: Optional[str] = Form(""), include_full: Optional[int] = Form(None), skip_bots: Optional[int] = Form(1), skip_admins: Optional[int] = Form(1), _: bool = Depends(require_admin)):
+async def scrape_run(
+    request: Request,
+    source: str = Form(...),
+    limit: int = Form(500),
+    query: str = Form(""),
+    min_last_seen_days: Optional[int] = Form(None),
+    exclude_contains: Optional[str] = Form(""),
+    include_full: Optional[int] = Form(None),
+    skip_bots: Optional[int] = Form(1),
+    skip_admins: Optional[int] = Form(1),
+    _: bool = Depends(require_admin),
+):
     if request.session.get("csrf") != (await request.form()).get("csrf"):
         return Response(status_code=403)
     factory = ClientFactory(settings.TELEGRAM_API_ID, settings.TELEGRAM_API_HASH, settings.SESSIONS_DIR)
@@ -369,7 +451,7 @@ async def scrape_run(request: Request, source: str = Form(...), limit: int = For
             )
         else:
             usernames = await scraper.scrape_usernames(source, limit, query, min_last_seen=delta)
-        exc = [s.strip().lower() for s in (exclude_contains or '').split(',') if s.strip()]
+        exc = [s.strip().lower() for s in (exclude_contains or "").split(",") if s.strip()]
         if exc:
             usernames = [u for u in usernames if all(x not in u.lower() for x in exc)]
         accounts = await AccountService().list()
@@ -393,22 +475,29 @@ async def scrape_run(request: Request, source: str = Form(...), limit: int = For
     finally:
         await client.disconnect()
 
+
 @app.post("/scrape/enqueue")
-async def scrape_enqueue(request: Request, dest: str = Form(...), usernames: str = Form(...), _: bool = Depends(require_admin)):
+async def scrape_enqueue(
+    request: Request, dest: str = Form(...), usernames: str = Form(...), _: bool = Depends(require_admin)
+):
     if request.session.get("csrf") != (await request.form()).get("csrf"):
         return Response(status_code=403)
     lines = [u for u in usernames.splitlines() if u.strip()]
     us, phs = JobService.parse_mixed_lines(lines)
     if us or phs:
         form = await request.form()
-        account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, 'getlist') else []
+        account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, "getlist") else []
         await JobService().enqueue(dest, usernames=us, phones=phs, allowed_account_ids=account_ids or None)
     return RedirectResponse(url="/", status_code=303)
+
 
 @app.get("/message")
 async def message_page(request: Request, _: bool = Depends(require_admin)):
     accounts = await AccountService().list()
-    return templates.TemplateResponse("message.html", {"request": request, "csrf": request.session.get("csrf"), "accounts": accounts})
+    return templates.TemplateResponse(
+        "message.html", {"request": request, "csrf": request.session.get("csrf"), "accounts": accounts}
+    )
+
 
 @app.post("/message/enqueue")
 async def message_enqueue(request: Request, _: bool = Depends(require_admin)):
@@ -417,14 +506,24 @@ async def message_enqueue(request: Request, _: bool = Depends(require_admin)):
         return Response(status_code=403)
     targets = [t.strip() for t in str(form.get("targets", "")).splitlines() if t.strip()]
     messages = [m.strip() for m in str(form.get("messages", "")).splitlines() if m.strip()]
-    account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, 'getlist') else []
+    account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, "getlist") else []
     users, phones = JobService.parse_mixed_lines(targets)
     if not messages:
         messages = ["Hello!"]
     from uuid import uuid4
+
     batch = uuid4().hex[:12]
-    await JobService().enqueue(dest_group="", usernames=users, phones=phones, kind="message", allowed_account_ids=account_ids or None, batch_id=batch, message_text="\n".join(messages))
+    await JobService().enqueue(
+        dest_group="",
+        usernames=users,
+        phones=phones,
+        kind="message",
+        allowed_account_ids=account_ids or None,
+        batch_id=batch,
+        message_text="\n".join(messages),
+    )
     return RedirectResponse(url="/", status_code=303)
+
 
 @app.get("/onboarding")
 async def onboarding(request: Request, _: bool = Depends(require_admin)):
@@ -445,24 +544,37 @@ async def onboarding(request: Request, _: bool = Depends(require_admin)):
         hb = await control.get("worker_heartbeat")
         if hb:
             from datetime import datetime, timedelta
+
             ts = datetime.fromisoformat(hb)
             checks["worker_alive"] = (datetime.utcnow() - ts) < timedelta(seconds=15)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 - best-effort
+        logging.getLogger(__name__).debug("heartbeat read failed: %s", e)
     cfg = {"SESSIONS_DIR": settings.SESSIONS_DIR}
-    return templates.TemplateResponse("onboarding.html", {"request": request, "checks": checks, "csrf": request.session.get("csrf"), "cfg": cfg})
+    return templates.TemplateResponse(
+        "onboarding.html", {"request": request, "checks": checks, "csrf": request.session.get("csrf"), "cfg": cfg}
+    )
+
 
 @app.get("/upload")
 async def upload_page(request: Request, _: bool = Depends(require_admin)):
     accounts = await AccountService().list()
-    return templates.TemplateResponse("upload.html", {"request": request, "csrf": request.session.get("csrf"), "accounts": accounts})
+    return templates.TemplateResponse(
+        "upload.html", {"request": request, "csrf": request.session.get("csrf"), "accounts": accounts}
+    )
+
 
 @app.get("/contact")
 async def contact_page(request: Request):
     return templates.TemplateResponse("contact.html", {"request": request})
 
+
 @app.post("/upload")
-async def upload_jobs(request: Request, dest: str = Form(...), file: UploadFile = File(...), _: bool = Depends(require_admin)):
+async def upload_jobs(
+    request: Request,
+    dest: str = Form(...),
+    file: UploadFile = File(...),
+    _: bool = Depends(require_admin),  # noqa: B008
+):
     if request.session.get("csrf") != (await request.form()).get("csrf"):
         return Response(status_code=403)
     content = (await file.read()).decode("utf-8", errors="ignore")
@@ -482,16 +594,19 @@ async def upload_jobs(request: Request, dest: str = Form(...), file: UploadFile 
     if not (usernames or phones):
         return RedirectResponse(url="/upload", status_code=303)
     form = await request.form()
-    account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, 'getlist') else []
-    count = await JobService().enqueue(dest, usernames=usernames, phones=phones, allowed_account_ids=account_ids or None)
+    account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, "getlist") else []
+    await JobService().enqueue(dest, usernames=usernames, phones=phones, allowed_account_ids=account_ids or None)
     return RedirectResponse(url="/", status_code=303)
+
 
 @app.get("/login")
 async def login_form(request: Request):
     if not request.session.get("csrf"):
         import secrets
+
         request.session["csrf"] = secrets.token_hex(16)
     return templates.TemplateResponse("login.html", {"request": request, "csrf": request.session.get("csrf")})
+
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...), csrf: str = Form(...)):
@@ -502,25 +617,45 @@ async def login(request: Request, username: str = Form(...), password: str = For
     ok = False
     if user and verify_password(password, user.password_hash):
         ok = True
-    elif settings.ADMIN_USERNAME and settings.ADMIN_PASSWORD and username == settings.ADMIN_USERNAME and password == settings.ADMIN_PASSWORD:
+    elif (
+        settings.ADMIN_USERNAME
+        and settings.ADMIN_PASSWORD
+        and username == settings.ADMIN_USERNAME
+        and password == settings.ADMIN_PASSWORD
+    ):
         ok = True
     if ok:
         request.session["admin"] = True
         # Redirect so GET "/" can set/generate CSRF and render the fresh dashboard
         return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid credentials"}, status_code=401)
+    return templates.TemplateResponse(
+        "login.html", {"request": request, "error": "Invalid credentials"}, status_code=401
+    )
+
 
 @app.post("/logout")
 async def logout(request: Request):
     request.session.clear()
     return templates.TemplateResponse("login.html", {"request": request, "info": "Logged out"})
 
+
 @app.get("/partials/jobs")
-async def jobs_partial(request: Request, status: str | None = None, page: int = 1, page_size: int = 25, q: str | None = None, dest: str | None = None, date_from: str | None = None, date_to: str | None = None, _: bool = Depends(require_admin)):
+async def jobs_partial(
+    request: Request,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+    q: str | None = None,
+    dest: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    _: bool = Depends(require_admin),
+):
     svc = JobService()
     df = None
     dt = None
     from datetime import datetime
+
     try:
         if date_from:
             df = datetime.fromisoformat(date_from)
@@ -530,7 +665,24 @@ async def jobs_partial(request: Request, status: str | None = None, page: int = 
         df = dt = None
     items, total = await svc.search_jobs(status or None, q, dest, df, dt, page, page_size)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": status or "all", "page": page, "page_size": page_size, "total": total, "q": q or "", "dest": dest or "", "date_from": date_from or "", "date_to": date_to or ""})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": status or "all",
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "q": q or "",
+            "dest": dest or "",
+            "date_from": date_from or "",
+            "date_to": date_to or "",
+        },
+    )
+
 
 @app.post("/jobs/run-now")
 async def job_run_now(request: Request, job_id: int = Form(...), _: bool = Depends(require_admin)):
@@ -543,6 +695,7 @@ async def job_run_now(request: Request, job_id: int = Form(...), _: bool = Depen
         return Response(status_code=404)
     # prioritize by setting next_attempt_at to past and status to queued
     from datetime import datetime, timedelta
+
     async with async_session() as session:
         db_job = await session.get(AddJob, job_id)
         if not db_job:
@@ -554,25 +707,56 @@ async def job_run_now(request: Request, job_id: int = Form(...), _: bool = Depen
     # return refreshed jobs table
     items, total = await svc.search_jobs(status=None, page=1, page_size=25)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": total})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": total,
+        },
+    )
+
 
 @app.post("/jobs/set-accounts")
-async def job_set_accounts(request: Request, job_id: int = Form(...), account_ids: str = Form(""), _: bool = Depends(require_admin)):
+async def job_set_accounts(
+    request: Request, job_id: int = Form(...), account_ids: str = Form(""), _: bool = Depends(require_admin)
+):
     form = await request.form()
     if request.session.get("csrf") != form.get("csrf"):
         return Response(status_code=403)
-    ids = [int(x) for x in account_ids.split(',') if x.strip().isdigit()] if account_ids else []
+    ids = [int(x) for x in account_ids.split(",") if x.strip().isdigit()] if account_ids else []
     await JobService().set_allowed_accounts(job_id, ids or None)
     items, total = await JobService().search_jobs(status=None, page=1, page_size=25)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": total})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": total,
+        },
+    )
+
 
 @app.post("/jobs/set-next")
-async def job_set_next(request: Request, job_id: int = Form(...), seconds: int = Form(0), _: bool = Depends(require_admin)):
+async def job_set_next(
+    request: Request, job_id: int = Form(...), seconds: int = Form(0), _: bool = Depends(require_admin)
+):
     form = await request.form()
     if request.session.get("csrf") != form.get("csrf"):
         return Response(status_code=403)
     from datetime import datetime, timedelta
+
     async with async_session() as session:
         db_job = await session.get(AddJob, job_id)
         if not db_job:
@@ -582,10 +766,25 @@ async def job_set_next(request: Request, job_id: int = Form(...), seconds: int =
         await session.commit()
     items, total = await JobService().search_jobs(status=None, page=1, page_size=25)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": total})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": total,
+        },
+    )
+
 
 @app.post("/jobs/mark-status")
-async def job_mark_status(request: Request, job_id: int = Form(...), status: str = Form("success"), _: bool = Depends(require_admin)):
+async def job_mark_status(
+    request: Request, job_id: int = Form(...), status: str = Form("success"), _: bool = Depends(require_admin)
+):
     form = await request.form()
     if request.session.get("csrf") != form.get("csrf"):
         return Response(status_code=403)
@@ -594,18 +793,44 @@ async def job_mark_status(request: Request, job_id: int = Form(...), status: str
     await JobService().mark(job_id, status)
     items, total = await JobService().search_jobs(status=None, page=1, page_size=25)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": total})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": total,
+        },
+    )
+
 
 @app.post("/jobs/cancel")
 async def jobs_cancel(request: Request, job_ids: str = Form(""), _: bool = Depends(require_admin)):
     form = await request.form()
     if request.session.get("csrf") != form.get("csrf"):
         return Response(status_code=403)
-    ids = [int(x) for x in (job_ids.split(',') if job_ids else []) if x.strip().isdigit()]
+    ids = [int(x) for x in (job_ids.split(",") if job_ids else []) if x.strip().isdigit()]
     await JobService().cancel_jobs(ids)
     items, total = await JobService().search_jobs(status=None, page=1, page_size=25)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": total})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": total,
+        },
+    )
+
 
 @app.post("/jobs/cancel-all")
 async def jobs_cancel_all(request: Request, _: bool = Depends(require_admin)):
@@ -615,7 +840,20 @@ async def jobs_cancel_all(request: Request, _: bool = Depends(require_admin)):
     await JobService().cancel_all()
     items, total = await JobService().search_jobs(status=None, page=1, page_size=25)
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": total})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": total,
+        },
+    )
+
 
 @app.post("/jobs/enqueue-form")
 async def enqueue_form(request: Request, _: bool = Depends(require_admin)):
@@ -629,11 +867,24 @@ async def enqueue_form(request: Request, _: bool = Depends(require_admin)):
     usernames, phones = JobService.parse_mixed_lines(lines)
     svc = JobService()
     if dest and (usernames or phones):
-        account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, 'getlist') else []
+        account_ids = [int(x) for x in form.getlist("account_ids")] if hasattr(form, "getlist") else []
         await svc.enqueue(dest, usernames=usernames, phones=phones, allowed_account_ids=account_ids or None)
     items = await svc.list_jobs()
     paused = (await control.get("paused")) == "1"
-    return templates.TemplateResponse("_jobs_table.html", {"request": request, "csrf": request.session.get("csrf"), "jobs": items, "paused": paused, "status": "all", "page": 1, "page_size": 25, "total": len(items)})
+    return templates.TemplateResponse(
+        "_jobs_table.html",
+        {
+            "request": request,
+            "csrf": request.session.get("csrf"),
+            "jobs": items,
+            "paused": paused,
+            "status": "all",
+            "page": 1,
+            "page_size": 25,
+            "total": len(items),
+        },
+    )
+
 
 @app.get("/partials/recent")
 async def recent_partial(request: Request, _: bool = Depends(require_admin)):
@@ -643,27 +894,42 @@ async def recent_partial(request: Request, _: bool = Depends(require_admin)):
     items = sorted(items, key=lambda j: j.updated_at or j.created_at, reverse=True)[:10]
     return templates.TemplateResponse("_recent.html", {"request": request, "items": items})
 
+
 @app.get("/inbox")
 async def inbox_page(request: Request, _: bool = Depends(require_admin)):
     accounts = await AccountService().list()
     sel = request.query_params.get("account_id")
     account_id = int(sel) if sel and sel.isdigit() else (accounts[0].id if accounts else None)
-    return templates.TemplateResponse("inbox.html", {"request": request, "csrf": request.session.get("csrf"), "accounts": accounts, "account_id": account_id})
+    return templates.TemplateResponse(
+        "inbox.html",
+        {"request": request, "csrf": request.session.get("csrf"), "accounts": accounts, "account_id": account_id},
+    )
+
 
 @app.get("/partials/inbox")
-async def inbox_partial(request: Request, account_id: int, limit: int = 50, q: str | None = None, page: int = 1, page_size: int = 20, _: bool = Depends(require_admin)):
+async def inbox_partial(
+    request: Request,
+    account_id: int,
+    limit: int = 50,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    _: bool = Depends(require_admin),
+):
     # Build a client for the selected account and fetch recent incoming messages
     acc = await AccountService().get(account_id)
     if not acc:
         return Response("Account not found", status_code=404)
     factory = ClientFactory(settings.TELEGRAM_API_ID, settings.TELEGRAM_API_HASH, settings.SESSIONS_DIR)
     from app.services.telethon_client import parse_proxy
+
     proxy = acc.proxy or settings.SOCKS_PROXY or settings.HTTP_PROXY
     # Explicitly use the stored session_path for this account to avoid mismatches
     session_id = acc.session_path if acc.session_path else acc.phone
     client = factory.build(session_id, proxy=parse_proxy(proxy), device_string=acc.device_string)
     # Early check for session presence
     import os
+
     base = session_id
     has_session_file = os.path.exists(base) or os.path.exists(base + ".session")
     error = None
@@ -677,9 +943,19 @@ async def inbox_partial(request: Request, account_id: int, limit: int = 50, q: s
         # Aggregate latest incoming messages across recent dialogs
         items = []
         if error:
-            return templates.TemplateResponse("_inbox.html", {"request": request, "items": items, "account_id": account_id, "error": error})
+            return templates.TemplateResponse(
+                "_inbox.html", {"request": request, "items": items, "account_id": account_id, "error": error}
+            )
         if not has_session_file:
-            return templates.TemplateResponse("_inbox.html", {"request": request, "items": items, "account_id": account_id, "error": "No session file found for this account. Login first in Admin → Accounts."})
+            return templates.TemplateResponse(
+                "_inbox.html",
+                {
+                    "request": request,
+                    "items": items,
+                    "account_id": account_id,
+                    "error": "No session file found for this account. Login first in Admin → Accounts.",
+                },
+            )
         per_dialog = max(1, min(5, limit // 10 or 1))
         async for d in client.iter_dialogs(limit=100):
             # pull a few recent messages per dialog
@@ -687,35 +963,44 @@ async def inbox_partial(request: Request, account_id: int, limit: int = 50, q: s
             async for msg in client.iter_messages(d.entity, limit=per_dialog):
                 if getattr(msg, "out", False):
                     continue  # only incoming
-                date = getattr(msg, 'date', None)
+                date = getattr(msg, "date", None)
                 text = (msg.message or "").strip()
                 if not text:
-                    if getattr(msg, 'media', None):
+                    if getattr(msg, "media", None):
                         text = "[media]"
-                    elif getattr(msg, 'action', None):
+                    elif getattr(msg, "action", None):
                         text = "[service]"
                     else:
                         text = "[empty]"
-                peer_name = getattr(d, 'name', None) or getattr(d.entity, 'title', None) or getattr(d.entity, 'username', None) or str(getattr(d.entity, 'id', ''))
+                peer_name = (
+                    getattr(d, "name", None)
+                    or getattr(d.entity, "title", None)
+                    or getattr(d.entity, "username", None)
+                    or str(getattr(d.entity, "id", ""))
+                )
                 # Try to resolve sender info for groups/channels
                 sender_disp = None
                 try:
-                    s = getattr(msg, 'sender', None)
-                    if getattr(d, 'is_user', False):
+                    s = getattr(msg, "sender", None)
+                    if getattr(d, "is_user", False):
                         sender_disp = peer_name
                     elif s:
-                        sender_disp = getattr(s, 'username', None) or (
-                            (getattr(s, 'first_name', '') + ' ' + getattr(s, 'last_name', '')).strip()
-                        ) or str(getattr(s, 'id', ''))
+                        sender_disp = (
+                            getattr(s, "username", None)
+                            or ((getattr(s, "first_name", "") + " " + getattr(s, "last_name", "")).strip())
+                            or str(getattr(s, "id", ""))
+                        )
                 except Exception:
                     sender_disp = None
-                items.append({
-                    "peer": str(peer_name),
-                    "sender": str(sender_disp) if sender_disp else "",
-                    "text": text,
-                    "date": date.isoformat() if date else "",
-                    "_ts": date.timestamp() if date else 0.0,
-                })
+                items.append(
+                    {
+                        "peer": str(peer_name),
+                        "sender": str(sender_disp) if sender_disp else "",
+                        "text": text,
+                        "date": date.isoformat() if date else "",
+                        "_ts": date.timestamp() if date else 0.0,
+                    }
+                )
                 fetched += 1
                 if fetched >= per_dialog:
                     break
@@ -727,7 +1012,13 @@ async def inbox_partial(request: Request, account_id: int, limit: int = 50, q: s
         # Query filter
         if q:
             ql = str(q).lower()
-            items = [it for it in items if ql in (it.get('text','').lower()) or ql in (it.get('peer','').lower()) or ql in (it.get('sender','').lower())]
+            items = [
+                it
+                for it in items
+                if ql in (it.get("text", "").lower())
+                or ql in (it.get("peer", "").lower())
+                or ql in (it.get("sender", "").lower())
+            ]
         # Pagination
         total = len(items)
         page = max(1, int(page))
@@ -737,7 +1028,19 @@ async def inbox_partial(request: Request, account_id: int, limit: int = 50, q: s
         page_items = items[start:end]
     finally:
         await client.disconnect()
-    return templates.TemplateResponse("_inbox.html", {"request": request, "items": page_items, "account_id": account_id, "q": q or "", "page": page, "page_size": page_size, "total": total})
+    return templates.TemplateResponse(
+        "_inbox.html",
+        {
+            "request": request,
+            "items": page_items,
+            "account_id": account_id,
+            "q": q or "",
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        },
+    )
+
 
 @app.post("/scrape/export")
 async def scrape_export(
@@ -761,13 +1064,16 @@ async def scrape_export(
     base = os.path.join(settings.SESSIONS_DIR, "default")
     src = base + ".session" if os.path.exists(base + ".session") else (base if os.path.exists(base) else None)
     if src:
-        import tempfile, shutil
+        import shutil
+        import tempfile
+
         fd, tmp = tempfile.mkstemp(prefix="session_export_", suffix=".session")
         try:
             import os as _os
+
             _os.close(fd)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger(__name__).debug("tmp fd close failed: %s", e)
         shutil.copyfile(src, tmp)
         tmp_path = tmp
         client = factory.build(tmp_path)
@@ -776,7 +1082,11 @@ async def scrape_export(
     await client.start()
     try:
         scraper = Scraper(client)
-        delta = timedelta(days=int(min_last_seen_days)) if (min_last_seen_days is not None and str(min_last_seen_days).strip() != "") else None
+        delta = (
+            timedelta(days=int(min_last_seen_days))
+            if (min_last_seen_days is not None and str(min_last_seen_days).strip() != "")
+            else None
+        )
         rows = await scraper.scrape_members_detailed(
             source,
             limit=limit,
@@ -787,21 +1097,38 @@ async def scrape_export(
             include_full=True,
         )
         # Optional exclude filter (applies to username)
-        exc = [s.strip().lower() for s in (exclude_contains or '').split(',') if s.strip()]
+        exc = [s.strip().lower() for s in (exclude_contains or "").split(",") if s.strip()]
         if exc:
+
             def keep(r):
-                uname = (r.get('username') or '').lower()
+                uname = (r.get("username") or "").lower()
                 return all(x not in uname for x in exc)
+
             rows = [r for r in rows if keep(r)]
         # Build CSV
-        import io, csv, re
-        output = io.StringIO(newline='')
+        import csv
+        import io
+        import re
+
+        output = io.StringIO(newline="")
         fieldnames = [
-            "id","username","phone","first_name","last_name","full_name",
-            "is_bot","is_verified","is_premium","is_restricted","lang_code",
-            "status","last_seen","about","common_chats_count",
+            "id",
+            "username",
+            "phone",
+            "first_name",
+            "last_name",
+            "full_name",
+            "is_bot",
+            "is_verified",
+            "is_premium",
+            "is_restricted",
+            "lang_code",
+            "status",
+            "last_seen",
+            "about",
+            "common_chats_count",
         ]
-        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore', lineterminator='\n')
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         for r in rows:
             writer.writerow(r)
@@ -817,8 +1144,9 @@ async def scrape_export(
             if tmp_path:
                 try:
                     os.remove(tmp_path)
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    logging.getLogger(__name__).debug("tmp session cleanup failed: %s", e)
+
 
 @app.post("/control/pause")
 async def pause(request: Request, _: bool = Depends(require_admin)):
@@ -827,10 +1155,10 @@ async def pause(request: Request, _: bool = Depends(require_admin)):
     await control.set("paused", "1")
     return {"ok": True}
 
+
 @app.post("/control/resume")
 async def resume(request: Request, _: bool = Depends(require_admin)):
     if request.session.get("csrf") != (await request.form()).get("csrf"):
         return Response(status_code=403)
     await control.set("paused", "0")
     return {"ok": True}
-

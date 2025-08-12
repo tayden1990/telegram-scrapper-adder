@@ -1,18 +1,20 @@
-from typing import List, Optional, Dict, Any
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
-from telethon.tl.types import (
-    UserStatusEmpty,
-    UserStatusOnline,
-    UserStatusOffline,
-    UserStatusRecently,
-    UserStatusLastWeek,
-    UserStatusLastMonth,
-    ChannelParticipantsAdmins,
-)
 from telethon.tl.functions.users import GetFullUserRequest
-import asyncio
-from datetime import datetime, timedelta
+from telethon.tl.types import (
+    ChannelParticipantsAdmins,
+    UserStatusEmpty,
+    UserStatusLastMonth,
+    UserStatusLastWeek,
+    UserStatusOffline,
+    UserStatusOnline,
+    UserStatusRecently,
+)
 
 
 def _is_recent(status, min_recency: Optional[timedelta]) -> bool:
@@ -55,8 +57,11 @@ class Scraper:
             admin_user_ids = set()
             if skip_admins:
                 try:
-                    admins = await self.client.get_participants(entity, filter=type("AdminsFilter", (), {"__class__": object})())
-                except Exception:
+                    admins = await self.client.get_participants(
+                        entity, filter=type("AdminsFilter", (), {"__class__": object})()
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logging.getLogger(__name__).debug("admins fetch failed: %s", e)
                     admins = []
                 for a in admins:
                     admin_user_ids.add(a.id)
@@ -126,8 +131,8 @@ class Scraper:
                 admins = await self.client.get_participants(entity, filter=ChannelParticipantsAdmins())
                 for a in admins:
                     admin_user_ids.add(a.id)
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger(__name__).debug("admins preload failed: %s", e)
         # Fetch participants
         participants = await self.client.get_participants(entity, search=query, limit=limit)
         seen_ids = set()
@@ -149,7 +154,9 @@ class Scraper:
                 "phone": (u.phone or "") if hasattr(u, "phone") and u.phone else "",
                 "first_name": getattr(u, "first_name", "") or "",
                 "last_name": getattr(u, "last_name", "") or "",
-                "full_name": (f"{(getattr(u,'first_name','') or '').strip()} {(getattr(u,'last_name','') or '').strip()}" ).strip(),
+                "full_name": (
+                    f"{(getattr(u,'first_name','') or '').strip()} {(getattr(u,'last_name','') or '').strip()}"
+                ).strip(),
                 "is_bot": bool(getattr(u, "bot", False)),
                 "is_verified": bool(getattr(u, "verified", False)),
                 "is_premium": bool(getattr(u, "premium", False)),
@@ -169,7 +176,7 @@ class Scraper:
                         rec["common_chats_count"] = getattr(full, "common_chats_count", None)
                 except FloodWaitError as e:
                     await asyncio.sleep(int(getattr(e, "seconds", 30)))
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    logging.getLogger(__name__).debug("full user fetch failed: %s", e)
             rows.append(rec)
         return rows

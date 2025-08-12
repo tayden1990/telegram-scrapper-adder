@@ -1,5 +1,6 @@
 import time
-from collections import deque, defaultdict
+from collections import defaultdict, deque
+
 
 class RateLimiter:
     def __init__(self, max_events: int, per_seconds: int):
@@ -15,6 +16,7 @@ class RateLimiter:
             self.events.append(now)
             return True
         return False
+
 
 class Quotas:
     def __init__(self, max_per_window: int, window_seconds: int):

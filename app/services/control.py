@@ -1,6 +1,8 @@
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
 from sqlmodel import select
+
 from app.core.db import async_session
 from app.models.db import AppControl
 

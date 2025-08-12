@@ -1,0 +1,27 @@
+[tool.black]
+line-length = 120
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 120
+respect-gitignore = true
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "S", "C4"]
+ignore = []
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/auth.py" = ["B008"]
+"app/api/main.py" = ["B008", "S110", "E501"]
+"app/services/adder.py" = ["S311"]
+"app/services/scraper.py" = ["S110"]
+"app/services/telethon_client.py" = ["C408"]
+"app/workers/worker.py" = ["S311", "S110", "C401"]
+"app/core/logging.py" = ["E501"]
+"app/cli/admins.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

@@ -6,26 +6,27 @@ Revises: 0001_initial
 Create Date: 2025-08-12 00:10:00
 """
 
-from alembic import op
 import sqlalchemy as sa
 
-revision = '0002_appcontrol'
-down_revision = '0001_initial'
+from alembic import op
+
+revision = "0002_appcontrol"
+down_revision = "0001_initial"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
     op.create_table(
-        'appcontrol',
-        sa.Column('id', sa.Integer, primary_key=True),
-        sa.Column('key', sa.String, nullable=False),
-        sa.Column('value', sa.String, nullable=False),
-        sa.Column('updated_at', sa.DateTime, nullable=False),
+        "appcontrol",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("key", sa.String, nullable=False),
+        sa.Column("value", sa.String, nullable=False),
+        sa.Column("updated_at", sa.DateTime, nullable=False),
     )
-    op.create_index('ix_appcontrol_key', 'appcontrol', ['key'], unique=True)
+    op.create_index("ix_appcontrol_key", "appcontrol", ["key"], unique=True)
 
 
 def downgrade() -> None:
-    op.drop_index('ix_appcontrol_key', table_name='appcontrol')
-    op.drop_table('appcontrol')
+    op.drop_index("ix_appcontrol_key", table_name="appcontrol")
+    op.drop_table("appcontrol")

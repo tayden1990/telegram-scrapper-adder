@@ -1,8 +1,11 @@
-from typing import Iterable, List, Optional, Tuple, Sequence
-from sqlmodel import select, func
-from app.models.db import AddJob
-from app.core.db import async_session
 from datetime import datetime, timedelta
+from typing import Iterable, List, Optional, Sequence, Tuple
+
+from sqlmodel import func, select
+
+from app.core.db import async_session
+from app.models.db import AddJob
+
 
 class JobService:
     async def get(self, job_id: int) -> Optional[AddJob]:
@@ -22,9 +25,31 @@ class JobService:
         async with async_session() as session:
             jobs = []
             for u in usernames:
-                jobs.append(AddJob(dest_group=dest_group, username=u, status="queued", created_at=datetime.utcnow(), kind=kind, allowed_account_ids=self._fmt_ids(allowed_account_ids), batch_id=batch_id, message_text=message_text))
+                jobs.append(
+                    AddJob(
+                        dest_group=dest_group,
+                        username=u,
+                        status="queued",
+                        created_at=datetime.utcnow(),
+                        kind=kind,
+                        allowed_account_ids=self._fmt_ids(allowed_account_ids),
+                        batch_id=batch_id,
+                        message_text=message_text,
+                    )
+                )
             for p in phones:
-                jobs.append(AddJob(dest_group=dest_group, phone=p, status="queued", created_at=datetime.utcnow(), kind=kind, allowed_account_ids=self._fmt_ids(allowed_account_ids), batch_id=batch_id, message_text=message_text))
+                jobs.append(
+                    AddJob(
+                        dest_group=dest_group,
+                        phone=p,
+                        status="queued",
+                        created_at=datetime.utcnow(),
+                        kind=kind,
+                        allowed_account_ids=self._fmt_ids(allowed_account_ids),
+                        batch_id=batch_id,
+                        message_text=message_text,
+                    )
+                )
             # storing usernames without IDs here, could be extended to a Member table join
             session.add_all(jobs)
             await session.commit()
@@ -39,18 +64,18 @@ class JobService:
             s = raw.strip()
             if not s:
                 continue
-            if s.startswith('@'):
-                users.append(s.lstrip('@'))
+            if s.startswith("@"):
+                users.append(s.lstrip("@"))
             else:
                 # keep plus if present; strip spaces and dashes
-                p = s.replace(' ', '').replace('-', '')
-                if p.startswith('+'):
+                p = s.replace(" ", "").replace("-", "")
+                if p.startswith("+"):
                     phones.append(p)
                 elif p.isdigit():
                     phones.append(p)
                 else:
                     # fallback treat as username if malformed
-                    users.append(s.lstrip('@'))
+                    users.append(s.lstrip("@"))
         return users, phones
 
     @staticmethod
@@ -73,8 +98,7 @@ class JobService:
             res = await session.execute(
                 select(AddJob)
                 .where(
-                    (AddJob.status == "queued") &
-                    ((AddJob.next_attempt_at.is_(None)) | (AddJob.next_attempt_at <= now))
+                    (AddJob.status == "queued") & ((AddJob.next_attempt_at.is_(None)) | (AddJob.next_attempt_at <= now))
                 )
                 .order_by(AddJob.created_at)
             )
@@ -182,6 +206,7 @@ class JobService:
         if not ids:
             return 0
         from sqlmodel import update
+
         async with async_session() as session:
             stmt = (
                 update(AddJob)
@@ -200,6 +225,7 @@ class JobService:
     async def cancel_all(self) -> int:
         """Cancel all jobs that are queued or in_progress."""
         from sqlmodel import update
+
         async with async_session() as session:
             stmt = (
                 update(AddJob)

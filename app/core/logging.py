@@ -1,6 +1,5 @@
 import logging
 from logging.config import dictConfig
-import json
 
 
 def setup_logging(level: str = "INFO"):
@@ -14,7 +13,10 @@ def setup_logging(level: str = "INFO"):
                 },
                 "json": {
                     "()": "logging.Formatter",
-                    "format": "{\"time\": \"%(asctime)s\", \"level\": \"%(levelname)s\", \"name\": \"%(name)s\", \"message\": \"%(message)s\"}",
+                    "format": (
+                        '{"time": "%(asctime)s", "level": "%(levelname)s", '
+                        '"name": "%(name)s", "message": "%(message)s"}'
+                    ),
                 },
             },
             "handlers": {

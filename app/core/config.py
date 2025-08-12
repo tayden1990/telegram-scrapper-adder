@@ -1,6 +1,8 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field
 from typing import Optional
+
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     TELEGRAM_API_ID: Optional[int] = Field(default=None)
@@ -26,5 +28,6 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
     }
+
 
 settings = Settings()

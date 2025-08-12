@@ -1,9 +1,10 @@
-from __future__ import with_statement
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
-from alembic import context
 import os
 import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -20,16 +21,19 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 # target_metadata = None
 
+
 def get_target_metadata():
     # Import SQLModel and models so metadata is populated
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if root not in sys.path:
         sys.path.append(root)
-    app_dir = os.path.join(root, 'app')
+    app_dir = os.path.join(root, "app")
     if app_dir not in sys.path:
         sys.path.append(app_dir)
-    import app.models.db  # noqa: F401 - populate SQLModel.metadata
     from sqlmodel import SQLModel
+
+    import app.models.db  # noqa: F401 - populate SQLModel.metadata
+
     return SQLModel.metadata
 
 

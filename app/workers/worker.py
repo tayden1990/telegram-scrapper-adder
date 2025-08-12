@@ -1,18 +1,22 @@
 import asyncio
+import logging
 import random
 from datetime import datetime
 from typing import Dict
-from app.core.config import settings
-from app.core.db import init_db
-from app.core.limits import RateLimiter, Quotas
-from app.core.metrics import jobs_total
-from app.services.telethon_client import ClientFactory, parse_proxy
-from app.services.adder import Adder
-from app.services.jobs import JobService
-from app.services.accounts import AccountService
+
 from telethon.errors import FloodWaitError, PeerFloodError
 from telethon.errors.rpcbaseerrors import ServerError
+
+from app.core.config import settings
+from app.core.db import init_db
+from app.core.limits import Quotas, RateLimiter
+from app.core.metrics import jobs_total
+from app.services.accounts import AccountService
+from app.services.adder import Adder
 from app.services.control import AppControlService
+from app.services.jobs import JobService
+from app.services.telethon_client import ClientFactory, parse_proxy
+
 
 async def run_worker():
     await init_db()
@@ -25,12 +29,13 @@ async def run_worker():
     clients: Dict[int, tuple] = {}
 
     async def get_client_for_account(acc):
+        # return cached client/adder if already started
         if acc.id in clients:
             return clients[acc.id]
         # fallback to global proxy settings if account has none
-        from app.core.config import settings as cfg
-        proxy = acc.proxy or cfg.SOCKS_PROXY or cfg.HTTP_PROXY
-        client = factory.build(acc.phone, proxy=parse_proxy(proxy), device_string=acc.device_string)
+        proxy = acc.proxy or settings.SOCKS_PROXY or settings.HTTP_PROXY
+        session_id = acc.session_path if getattr(acc, "session_path", None) else acc.phone
+        client = factory.build(session_id, proxy=parse_proxy(proxy), device_string=acc.device_string)
         await client.start()
         adder = Adder(client)
         clients[acc.id] = (client, adder)
@@ -55,8 +60,8 @@ async def run_worker():
         if now_ts - last_hb >= 5:
             try:
                 await ctrl.set("worker_heartbeat", datetime.utcnow().isoformat())
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - best-effort heartbeat
+                logging.getLogger(__name__).debug("heartbeat write failed: %s", e)
             last_hb = now_ts
 
         job = await jobsvc.next_due_job()
@@ -76,14 +81,14 @@ async def run_worker():
         accounts = await accsvc.available_accounts()
         # filter by allowed_account_ids if present
         if job.allowed_account_ids:
-            allowed = set(int(x) for x in job.allowed_account_ids.split(',') if x.strip().isdigit())
+            allowed = {int(x) for x in job.allowed_account_ids.split(",") if x.strip().isdigit()}
             accounts = [a for a in accounts if a.id in allowed]
         if not accounts:
             await asyncio.sleep(5)
             continue
 
         # rotation: pick random available account
-        acc = random.choice(accounts)
+        acc = random.choice(accounts)  # noqa: S311
         client, adder = await get_client_for_account(acc)
         try:
             # show progress in UI
@@ -105,7 +110,7 @@ async def run_worker():
                     # resolve username to peer and send
                     result = {"success": 0, "skipped": 0, "failed": 0, "error": None}
                     try:
-                        text = random.choice(msgs)
+                        text = random.choice(msgs)  # noqa: S311
                         peer = await client.get_entity(job.username)
                         await client.send_message(peer, text)
                         result["success"] = 1
@@ -135,7 +140,7 @@ async def run_worker():
             await jobsvc.schedule_retry(job.id, backoff)
             jobs_total.labels(status="failed").inc()
             await asyncio.sleep(1)
-        except ServerError as e:
+        except ServerError:
             # transient Telegram internal issue; retry soon
             backoff = min(300, 2 ** min((job.attempt or 0) + 1, 6))
             await jobsvc.schedule_retry(job.id, backoff)
@@ -145,6 +150,7 @@ async def run_worker():
             await jobsvc.mark(job.id, "failed", account_id=acc.id, error=str(e))
             jobs_total.labels(status="failed").inc()
         await asyncio.sleep(1)
+
 
 if __name__ == "__main__":
     asyncio.run(run_worker())

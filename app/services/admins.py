@@ -1,10 +1,11 @@
 from typing import Optional
-from sqlmodel import select
-from app.core.db import async_session
-from app.models.db import AdminUser
+
 from passlib.context import CryptContext
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
 
+from app.core.db import async_session
+from app.models.db import AdminUser
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -20,7 +21,12 @@ def verify_password(plain: str, hashed: str) -> bool:
 class AdminService:
     async def get_by_username(self, username: str) -> Optional[AdminUser]:
         async with async_session() as session:
-            res = await session.execute(select(AdminUser).where(AdminUser.username == username, AdminUser.is_active == True))
+            res = await session.execute(
+                select(AdminUser).where(
+                    AdminUser.username == username,
+                    AdminUser.is_active.is_(True),
+                )
+            )
             return res.scalars().first()
 
     async def _get_any_by_username(self, username: str) -> Optional[AdminUser]:
@@ -42,7 +48,7 @@ class AdminService:
             except IntegrityError:
                 # Race condition fallback
                 await session.rollback()
-                raise ValueError(f"admin user '{username}' already exists")
+                raise ValueError(f"admin user '{username}' already exists") from None
             await session.refresh(user)
             return user
 

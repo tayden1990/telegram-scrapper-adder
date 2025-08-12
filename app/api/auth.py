@@ -1,14 +1,15 @@
-from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBasic, HTTPBasicCredentials, APIKeyHeader
-from app.core.config import settings
 import secrets
 
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
+
+from app.core.config import settings
 
 basic = HTTPBasic()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def require_admin(request: Request, creds: HTTPBasicCredentials = Depends(basic)):
+def require_admin(request: Request, creds: HTTPBasicCredentials = Depends(basic)):  # noqa: B008 - FastAPI DI
     # Session-based login
     if request.session.get("admin") is True:
         return True
