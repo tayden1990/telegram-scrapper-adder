@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 from datetime import datetime
+from typing import Dict
 
 from telethon.errors import FloodWaitError, PeerFloodError
 from telethon.errors.rpcbaseerrors import ServerError
@@ -25,7 +26,7 @@ async def run_worker():
     factory = ClientFactory(settings.TELEGRAM_API_ID, settings.TELEGRAM_API_HASH, settings.SESSIONS_DIR)
 
     # cache of active clients per account_id
-    clients: dict[int, tuple] = {}
+    clients: Dict[int, tuple] = {}
 
     async def get_client_for_account(acc):
         # return cached client/adder if already started
