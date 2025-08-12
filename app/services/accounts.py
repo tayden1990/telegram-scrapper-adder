@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
 from sqlmodel import select
 
@@ -22,12 +22,12 @@ class AccountService:
             await session.refresh(acc)
             return acc
 
-    async def list(self) -> List[Account]:
+    async def list(self) -> list[Account]:
         async with async_session() as session:
             res = await session.execute(select(Account))
             return list(res.scalars().all())
 
-    async def available_accounts(self) -> List[Account]:
+    async def available_accounts(self) -> list[Account]:
         now = datetime.utcnow()
         async with async_session() as session:
             res = await session.execute(select(Account))

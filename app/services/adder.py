@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import random
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from telethon import TelegramClient
 from telethon.errors import (

@@ -1,12 +1,12 @@
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 from telethon import TelegramClient
 from telethon.network.connection import ConnectionTcpAbridged
 from telethon.sessions import StringSession
 
 
-def parse_proxy(proxy_str: Optional[str]) -> Optional[Tuple[str, int, str, Optional[str]]]:
+def parse_proxy(proxy_str: Optional[str]) -> Optional[tuple[str, int, str, Optional[str]]]:
     # Expect formats: socks5://user:pass@host:port or http://host:port
     if not proxy_str:
         return None

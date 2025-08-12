@@ -1,0 +1,13 @@
+# Normalize line endings in the repo; tools like Black expect LF on Linux runners
+* text=auto eol=lf
+
+# Keep common binary files untouched
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.db binary
+*.sqlite binary
+*.session binary
