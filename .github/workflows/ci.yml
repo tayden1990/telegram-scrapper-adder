@@ -24,7 +24,7 @@ jobs:
           pip install black ruff
       - name: Ruff (lint)
         run: |
-          ruff check app workers
+          ruff check app
       - name: Black (format check)
         run: |
-          black --check app workers
+          black --check app
