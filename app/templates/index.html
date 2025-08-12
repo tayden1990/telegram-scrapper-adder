@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Telegram Scraper & Adder</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f5f5f5; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Telegram Scraper & Adder</h1>
+  {% if authed %}
+  <form method="post" action="/logout" style="margin-bottom:1rem;">
+    <button type="submit">Logout</button>
+  </form>
+  <nav style="margin-bottom:1rem;">
+  <a href="/onboarding">Onboarding</a> ·
+  <a href="/admin/accounts">Accounts</a> ·
+    <a href="/upload">Upload</a> ·
+  <a href="/scrape">Scrape</a> ·
+  <a href="/message">Message</a> ·
+  <a href="/inbox">Inbox</a> ·
+    <a href="/settings">Settings</a>
+  </nav>
+  {% else %}
+  <p><a href="/login">Login</a></p>
+  {% endif %}
+  <p class="muted">Simple admin powered by HTMX. Jobs refresh every 5s.</p>
+
+  <section>
+    <div id="overview" hx-get="/partials/overview" hx-trigger="load, every 5s" hx-swap="outerHTML">Loading summary…</div>
+  </section>
+
+  <section>
+    <div id="recent" hx-get="/partials/recent" hx-trigger="load, every 5s" hx-swap="outerHTML">Loading recent…</div>
+  </section>
+
+  <section>
+    <h2>Jobs</h2>
+    <form hx-post="/jobs/enqueue-form" hx-target="#jobs-table" hx-swap="outerHTML">
+      <input type="text" name="dest" placeholder="Destination (e.g., @mygroup)" required />
+  <textarea name="usernames" placeholder="one @username or phone per line" rows="3" cols="40"></textarea>
+      <div style="margin:.5rem 0;">
+        <label>Restrict to selected accounts:</label><br />
+        {% for a in accounts %}
+          <label><input type="checkbox" name="account_ids" value="{{ a.id }}" /> {{ a.phone }}</label><br />
+        {% endfor %}
+      </div>
+      {% if csrf %}<input type="hidden" name="csrf" value="{{ csrf }}" />{% endif %}
+      <button type="submit">Enqueue</button>
+    </form>
+    <div style="margin: .5rem 0;">
+      <button hx-post="/control/pause" hx-vals='{"csrf": "{{ csrf }}"}' hx-swap="none">Pause</button>
+      <button hx-post="/control/resume" hx-vals='{"csrf": "{{ csrf }}"}' hx-swap="none">Resume</button>
+    </div>
+    <div id="jobs-table" hx-get="/partials/jobs" hx-trigger="load, every 5s" hx-swap="outerHTML">
+      Loading jobs...
+    </div>
+  </section>
+  <script>
+    try {
+      const es = new EventSource('/events/jobs');
+      es.onmessage = () => {
+        const el = document.getElementById('jobs-table');
+        if (el) {
+          el.setAttribute('hx-get', '/partials/jobs');
+          el.setAttribute('hx-trigger', 'load');
+          el.dispatchEvent(new Event('load'));
+        }
+      };
+    } catch {}
+  </script>
+
+  <section>
+    <h2>API</h2>
+    <ul>
+      <li><a href="/health" target="_blank">Health</a></li>
+      <li><a href="/metrics" target="_blank">Metrics</a></li>
+    </ul>
+  </section>
+  <footer class="muted" style="margin-top:2rem;">
+    <small>
+      © 2025 Taher Akbari Saeed · <a href="/">Home</a> · <a href="https://github.com/tayden1990" target="_blank">GitHub</a> · <a href="/contact">Contact</a>
+    </small>
+  </footer>
+</body>
+</html>

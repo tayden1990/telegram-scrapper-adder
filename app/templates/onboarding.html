@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Onboarding</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    .nav a { margin-right: 1rem; }
+    .ok { color: #0a0; }
+    .bad { color: #a00; }
+    li { margin: .3rem 0; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/onboarding"><b>Onboarding</b></a>
+  <a href="/admin/accounts">Accounts</a>
+    <a href="/upload">Upload</a>
+    <a href="/scrape">Scrape</a>
+    <a href="/settings">Settings</a>
+  </div>
+  <h1>Welcome — Let’s get you set up</h1>
+  <ol>
+    <li class="{{ 'ok' if checks.secret_key else 'bad' }}">Session security key set (SECRET_KEY)
+      {% if not checks.secret_key %}<div>Go to <a href="/settings">Settings</a> and set SECRET_KEY in .env. Restart server.</div>{% endif %}
+    </li>
+    <li class="{{ 'ok' if checks.api_id and checks.api_hash else 'bad' }}">Telegram API credentials configured
+      {% if not (checks.api_id and checks.api_hash) %}
+        <div>Go to <a href="/settings">Settings</a> and set TELEGRAM_API_ID and TELEGRAM_API_HASH, then restart.</div>
+      {% endif %}
+    </li>
+    <li class="{{ 'ok' if checks.sessions_dir else 'bad' }}">Sessions directory exists ({{ cfg.SESSIONS_DIR if cfg else '' }})
+      {% if not checks.sessions_dir %}<div>Set SESSIONS_DIR in <a href="/settings">Settings</a> or create the folder.</div>{% endif %}
+    </li>
+    <li class="{{ 'ok' if checks.accounts else 'bad' }}">At least one Telegram account is logged in
+  {% if not checks.accounts %}<div>Add an account in <a href="/admin/accounts">Accounts</a> → Login.</div>{% endif %}
+    </li>
+    <li class="{{ 'ok' if checks.worker_alive else 'bad' }}">Background worker running
+      {% if not checks.worker_alive %}<div>Open a new terminal and run: <code>python -m app.workers.worker</code></div>{% endif %}
+    </li>
+  </ol>
+  <h2>Next</h2>
+  <ul>
+    <li>Upload a list in <a href="/upload">Upload</a>, or</li>
+    <li>Scrape members from a group in <a href="/scrape">Scrape</a></li>
+  </ul>
+  <p style="color:#555;">Tip: You can login Telegram accounts without sharing API ID/HASH by using our web login (code + optional 2FA). However, the app itself needs a Telegram API ID/HASH to create sessions — get them from my.telegram.org.</p>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<div id="jobs-table" style="max-height:60vh; overflow:auto;">
+  {% if paused %}
+  <p style="color: #b00;">Worker is paused</p>
+  {% endif %}
+  <div style="margin-bottom: .5rem;" id="filters">
+  <button hx-get="/partials/jobs?status=all&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">All</button>
+  <button hx-get="/partials/jobs?status=queued&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">Queued</button>
+  <button hx-get="/partials/jobs?status=in_progress&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">In&nbsp;Progress</button>
+  <button hx-get="/partials/jobs?status=success&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">Success</button>
+  <button hx-get="/partials/jobs?status=failed&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">Failed</button>
+  <button hx-get="/partials/jobs?status=skipped&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">Skipped</button>
+  <button hx-get="/partials/jobs?status=canceled&q={{ q|default('') }}" hx-target="#jobs-table" hx-swap="outerHTML" class="tab">Canceled</button>
+    <input type="text" name="q" value="{{ q|default('') }}" placeholder="search username/dest" 
+      hx-get="/partials/jobs?status={{ status }}" hx-target="#jobs-table" hx-trigger="change, keyup delay:300ms" hx-include="#filters" />
+    <input type="text" name="dest" value="{{ dest|default('') }}" placeholder="dest filter" 
+      hx-get="/partials/jobs?status={{ status }}" hx-target="#jobs-table" hx-trigger="change, keyup delay:300ms" hx-include="#filters" />
+    <input type="date" name="date_from" value="{{ date_from|default('') }}" 
+      hx-get="/partials/jobs?status={{ status }}" hx-target="#jobs-table" hx-trigger="change" hx-include="#filters" />
+    <input type="date" name="date_to" value="{{ date_to|default('') }}" 
+      hx-get="/partials/jobs?status={{ status }}" hx-target="#jobs-table" hx-trigger="change" hx-include="#filters" />
+  </div>
+  <form id="bulk-actions" hx-post="/jobs/cancel" hx-target="#jobs-table" hx-swap="outerHTML" style="margin-bottom:.5rem; display:flex; gap:.5rem; align-items:center;">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <input type="hidden" id="bulk-job-ids" name="job_ids" value="" />
+    <button type="submit" onclick="var ids=[...document.querySelectorAll('input[name=sel]:checked')].map(i=>i.value).join(','); document.getElementById('bulk-job-ids').value=ids;">Cancel Selected</button>
+    <button type="button" hx-post="/jobs/cancel-all" hx-target="#jobs-table" hx-swap="outerHTML" hx-vals='{"csrf":"{{ csrf }}"}' style="margin-left: .5rem;">Cancel All</button>
+  </form>
+  <table>
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="sel-all" onclick="document.querySelectorAll('input[name=sel]').forEach(cb=>cb.checked=this.checked)"></th>
+        <th>ID</th>
+        <th>Kind</th>
+        <th>Dest</th>
+        <th>Username/Phone</th>
+        <th>Message</th>
+        <th>Allowed Accounts</th>
+        <th>Status</th>
+        <th>Account</th>
+        <th>Error</th>
+        <th>Updated</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td><input type="checkbox" name="sel" value="{{ j.id }}" /></td>
+        <td>{{ j.id }}</td>
+        <td>{{ j.kind or 'add' }}</td>
+        <td>{{ j.dest_group }}</td>
+        <td>{{ j.username or j.phone or '' }}</td>
+        <td style="max-width:20ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ j.message_text or '' }}">{{ (j.message_text or '')[:20] }}</td>
+        <td>{{ j.allowed_account_ids or '' }}</td>
+        <td>
+          {% if j.status == 'success' %}<span style="color: #0a0;">success</span>
+          {% elif j.status == 'failed' %}<span style="color: #b00;">failed</span>
+          {% elif j.status == 'skipped' %}<span style="color: #666;">skipped</span>
+          {% elif j.status == 'canceled' %}<span style="color: #b60;">canceled</span>
+          {% elif j.status == 'in_progress' %}<span style="color: #085;">in&nbsp;progress</span>
+          {% else %}{{ j.status }}{% endif %}
+        </td>
+        <td>{{ j.account_id or '' }}</td>
+        <td>{{ j.error or '' }}</td>
+        <td>{{ j.updated_at or '' }}</td>
+        <td>
+          <form hx-post="/jobs/run-now" hx-target="#jobs-table" hx-swap="outerHTML" style="display:inline;">
+            <input type="hidden" name="csrf" value="{{ csrf }}" />
+            <input type="hidden" name="job_id" value="{{ j.id }}" />
+            <button type="submit">Run&nbsp;Now</button>
+          </form>
+          <form hx-post="/jobs/mark-status" hx-target="#jobs-table" hx-swap="outerHTML" style="display:inline;">
+            <input type="hidden" name="csrf" value="{{ csrf }}" />
+            <input type="hidden" name="job_id" value="{{ j.id }}" />
+            <input type="hidden" name="status" value="success" />
+            <button type="submit">Mark&nbsp;Done</button>
+          </form>
+          <details>
+            <summary>Accounts</summary>
+            <form hx-post="/jobs/set-accounts" hx-target="#jobs-table" hx-swap="outerHTML" style="display:inline;">
+              <input type="hidden" name="csrf" value="{{ csrf }}" />
+              <input type="hidden" name="job_id" value="{{ j.id }}" />
+              <input type="text" name="account_ids" placeholder="e.g. 1,2,3" value="{{ j.allowed_account_ids or '' }}" style="width:12ch;" />
+              <button type="submit">Save</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:.5rem; display:flex; gap:.5rem; align-items:center;">
+    {% set prev_page = (page - 1) if page > 1 else 1 %}
+    {% set next_page = (page + 1) if (page * page_size) < total else page %}
+  <button hx-get="/partials/jobs?status={{ status }}&q={{ q|default('') }}&dest={{ dest|default('') }}&date_from={{ date_from|default('') }}&date_to={{ date_to|default('') }}&page={{ prev_page }}&page_size={{ page_size }}" hx-target="#jobs-table" hx-swap="outerHTML">Prev</button>
+    <span>Page {{ page }} — total {{ total }}</span>
+  <button hx-get="/partials/jobs?status={{ status }}&q={{ q|default('') }}&dest={{ dest|default('') }}&date_from={{ date_from|default('') }}&date_to={{ date_to|default('') }}&page={{ next_page }}&page_size={{ page_size }}" hx-target="#jobs-table" hx-swap="outerHTML">Next</button>
+  </div>
+</div>

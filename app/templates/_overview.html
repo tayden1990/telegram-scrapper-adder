@@ -1,0 +1,8 @@
+<div>
+  <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+    <div>Worker: {% if worker_alive %}<span style="color:#0a0;">alive</span>{% else %}<span style="color:#b00;">offline</span>{% endif %}</div>
+    <div>State: {% if paused %}<span style="color:#b00;">paused</span>{% else %}<span style="color:#085;">running</span>{% endif %}</div>
+    <div>Accounts: <b>{{ accounts }}</b></div>
+  <div>Jobs — total <b>{{ counts.total }}</b> · queued {{ counts.queued }} · in progress {{ counts.in_progress }} · success {{ counts.success }} · failed {{ counts.failed }} · skipped {{ counts.skipped }} · canceled {{ counts.canceled }}</div>
+  </div>
+</div>

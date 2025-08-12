@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Bulk Message</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    .nav a { margin-right: 1rem; }
+    textarea { width: 520px; height: 120px; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/admin/accounts">Accounts</a>
+    <a href="/message"><b>Message</b></a>
+    <a href="/settings">Settings</a>
+  </div>
+  <h1>Bulk Message</h1>
+  <form method="post" action="/message/enqueue">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <p>
+      <label>Phones or @usernames (one per line)
+        <br />
+        <textarea name="targets" placeholder="+123...
++234...
+@username"></textarea>
+      </label>
+    </p>
+    <p>
+      <label>Message templates (one per line; will pick randomly for each send)
+        <br />
+        <textarea name="messages" placeholder="Hi!\nHello there!\nHey :) "></textarea>
+      </label>
+    </p>
+    <p>
+      <label>Restrict to selected accounts:
+        <br />
+        {% for a in accounts %}
+          <label><input type="checkbox" name="account_ids" value="{{ a.id }}" /> {{ a.phone }}</label><br />
+        {% endfor %}
+      </label>
+    </p>
+    <button type="submit">Enqueue</button>
+  </form>
+</body>
+</html>

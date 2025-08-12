@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Upload</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    .nav a { margin-right: 1rem; }
+    input[type=text] { width: 420px; padding: 6px; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+  <a href="/admin/accounts">Accounts</a>
+    <a href="/upload"><b>Upload</b></a>
+    <a href="/settings">Settings</a>
+  </div>
+  <h1>Upload List</h1>
+  <form method="post" action="/upload" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <p>
+      <label>Destination (e.g., @mygroup)
+        <input type="text" name="dest" required />
+      </label>
+    </p>
+    <p>
+  <label>File (CSV or TXT, one @username or phone per line, or first column)
+        <input type="file" name="file" accept=".csv,.txt" required />
+      </label>
+    </p>
+    <p>
+      <label>Restrict to selected accounts:</label><br />
+      {% for a in accounts %}
+        <label><input type="checkbox" name="account_ids" value="{{ a.id }}" /> {{ a.phone }}</label><br />
+      {% endfor %}
+    </p>
+    <button type="submit">Enqueue Jobs</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Inbox</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f5f5f5; }
+    .muted { color: #666; }
+    .row { display:flex; gap:.5rem; align-items:center; }
+    select { padding: .25rem; }
+  </style>
+</head>
+<body>
+  <h2>Inbox</h2>
+  <div class="row">
+    <label for="account_id">Account:</label>
+    <select id="account_id" name="account_id"
+      hx-get="/partials/inbox"
+      hx-target="#inbox"
+  hx-include="#account_id, #q"
+      hx-trigger="change">
+      {% for a in accounts %}
+        <option value="{{ a.id }}" {% if a.id == account_id %}selected{% endif %}>{{ a.phone }} (id {{ a.id }})</option>
+      {% endfor %}
+    </select>
+    <input id="q" name="q" type="search" placeholder="Search text/peer/sender" style="margin-left:1rem;" 
+      hx-get="/partials/inbox" hx-target="#inbox" hx-include="#account_id, #q" hx-trigger="keyup changed delay:400ms" />
+    <a href="/" style="margin-left:1rem;">Back</a>
+  </div>
+  <div id="inbox" hx-get="/partials/inbox?account_id={{ account_id }}" hx-trigger="load, every 5s" hx-swap="outerHTML">
+    Loading…
+  </div>
+  <footer class="muted" style="margin-top:2rem;">
+    <small>
+      © 2025 Taher Akbari Saeed · <a href="/">Home</a> · <a href="https://github.com/tayden1990" target="_blank">GitHub</a> · <a href="/contact">Contact</a>
+    </small>
+  </footer>
+</body>
+</html>

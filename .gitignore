@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.python-version
+
+# Environments
+.venv/
+venv/
+.env
+.env.*
+
+# Editors/IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data/secrets
+sessions/
+*.session
+app.db
+/data/
+
+# Cache/Test
+.cache/
+.pytest_cache/
+.coverage
+coverage.xml
+
+# Build
+build/
+dist/

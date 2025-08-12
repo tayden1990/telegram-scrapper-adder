@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Verify Code</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    .nav a { margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/admin/accounts"><b>Accounts</b></a>
+  </div>
+  <h1>Enter Telegram Code</h1>
+  <p>We sent a code to {{ phone }}</p>
+  <form method="post" action="/admin/accounts/verify">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <label>Code
+      <input type="text" name="code" placeholder="12345" required />
+    </label>
+    <div style="margin-top:1rem;"><button type="submit">Verify & Save</button></div>
+  </form>
+</body>
+</html>

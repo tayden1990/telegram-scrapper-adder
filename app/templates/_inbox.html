@@ -1,0 +1,47 @@
+<div id="inbox">
+  {% if error %}
+  <div style="padding:.75rem; background:#fff3cd; border:1px solid #ffeeba; color:#856404; margin-bottom: .75rem;">
+    {{ error }}
+    <a href="/admin/accounts/login" style="margin-left: .5rem;">Login account</a>
+  </div>
+  {% endif %}
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Peer</th>
+        <th>Sender</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in items %}
+      <tr>
+        <td style="white-space:nowrap;">{{ m.date }}</td>
+        <td>{{ m.peer }}</td>
+        <td class="muted">{{ m.sender }}</td>
+        <td style="max-width: 60ch; overflow:hidden; text-overflow:ellipsis;">{{ m.text }}</td>
+      </tr>
+      {% endfor %}
+      {% if not items %}
+      <tr><td colspan="3" class="muted">No incoming messages.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% if total and total > page_size %}
+  <div class="muted" style="margin-top:.5rem; display:flex; align-items:center; gap:.5rem;">
+    <form hx-get="/partials/inbox" hx-target="#inbox" hx-swap="outerHTML" style="display:flex; gap:.5rem; align-items:center;">
+      <input type="hidden" name="account_id" value="{{ account_id }}" />
+      <input type="hidden" name="q" value="{{ q }}" />
+      <button type="submit" name="page" value="{{ page - 1 if page > 1 else 1 }}">Prev</button>
+      <span>Page {{ page }}</span>
+      <button type="submit" name="page" value="{{ page + 1 }}">Next</button>
+      <select name="page_size">
+        {% for sz in [10,20,50,100] %}
+          <option value="{{ sz }}" {% if page_size == sz %}selected{% endif %}>{{ sz }}/page</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  {% endif %}
+</div>

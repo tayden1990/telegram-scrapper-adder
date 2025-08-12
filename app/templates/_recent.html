@@ -1,0 +1,10 @@
+<div>
+  <h3 style="margin:.5rem 0;">Recent activity</h3>
+  <ul style="margin:0; padding-left:1rem;">
+    {% for j in items %}
+      <li>#{{ j.id }} · {{ j.dest_group }} · {{ j.username or '' }} — {{ j.status }} {% if j.error %} ({{ j.error }}){% endif %} · <span class="muted">{{ (j.updated_at or j.created_at) }}</span></li>
+    {% else %}
+      <li class="muted">No recent activity</li>
+    {% endfor %}
+  </ul>
+</div>

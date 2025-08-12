@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Settings</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    label { display:block; margin-top:.5rem; }
+    input[type=text], input[type=number] { width: 420px; padding:6px; }
+    .nav a { margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+  <a href="/admin/accounts">Accounts</a>
+    <a href="/upload">Upload</a>
+    <a href="/settings"><b>Settings</b></a>
+  </div>
+  <h1>Settings</h1>
+  <form method="post" action="/settings">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <label>TELEGRAM_API_ID <input type="number" name="TELEGRAM_API_ID" value="{{ cfg.TELEGRAM_API_ID }}" /></label>
+    <label>TELEGRAM_API_HASH <input type="text" name="TELEGRAM_API_HASH" placeholder="set or update" /></label>
+    <label>SESSIONS_DIR <input type="text" name="SESSIONS_DIR" value="{{ cfg.SESSIONS_DIR }}" /></label>
+    <label>HTTP_PROXY <input type="text" name="HTTP_PROXY" value="{{ cfg.HTTP_PROXY }}" /></label>
+    <label>SOCKS_PROXY <input type="text" name="SOCKS_PROXY" value="{{ cfg.SOCKS_PROXY }}" /></label>
+    <label>RATE_LIMIT_MAX <input type="number" name="RATE_LIMIT_MAX" value="{{ cfg.RATE_LIMIT_MAX }}" /></label>
+    <label>RATE_LIMIT_WINDOW <input type="number" name="RATE_LIMIT_WINDOW" value="{{ cfg.RATE_LIMIT_WINDOW }}" /></label>
+    <label>QUOTA_PER_ACCOUNT_MAX <input type="number" name="QUOTA_PER_ACCOUNT_MAX" value="{{ cfg.QUOTA_PER_ACCOUNT_MAX }}" /></label>
+    <label>QUOTA_PER_ACCOUNT_WINDOW <input type="number" name="QUOTA_PER_ACCOUNT_WINDOW" value="{{ cfg.QUOTA_PER_ACCOUNT_WINDOW }}" /></label>
+    <div style="margin-top:1rem;"><button type="submit">Save</button></div>
+  </form>
+  <p style="margin-top:1rem; color:#666;">Note: After saving, restart the server to apply fully.</p>
+</body>
+</html>
